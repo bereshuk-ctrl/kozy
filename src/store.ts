@@ -12,6 +12,10 @@ const defaultSettings: AppSettings = {
 const defaultData: AppData = {
   goats: [],
   milkRecords: [],
+  poultry: [],
+  eggRecords: [],
+  feedRecords: [],
+  equipmentRecords: [],
   sales: [],
   expenses: [],
   invoices: [],

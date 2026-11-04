@@ -60,9 +60,60 @@ export interface InvoiceItem {
   total: number;
 }
 
+export type PoultryType = 'chicken' | 'turkey' | 'goose' | 'duck' | 'broiler';
+export type PoultryPurpose = 'layer' | 'meat' | 'breeding';
+
+export interface Poultry {
+  id: string;
+  name: string;
+  type: PoultryType;
+  breed: string;
+  birthDate: string;
+  purchaseDate: string;
+  purchasePrice: number;
+  purpose: PoultryPurpose;
+  count: number;
+  notes: string;
+  status: 'active' | 'sold' | 'dead';
+}
+
+export interface EggRecord {
+  id: string;
+  poultryId: string;
+  date: string;
+  quantity: number;
+  broken: number;
+  net: number;
+  notes: string;
+}
+
+export interface FeedRecord {
+  id: string;
+  date: string;
+  type: 'goat' | 'poultry' | 'all';
+  category: 'grain' | 'compound' | 'hay' | 'vegetables' | 'supplements' | 'other';
+  description: string;
+  quantity: number;
+  unit: string;
+  cost: number;
+}
+
+export interface EquipmentRecord {
+  id: string;
+  date: string;
+  name: string;
+  category: 'poultry' | 'goat' | 'general';
+  cost: number;
+  notes: string;
+}
+
 export interface AppData {
   goats: Goat[];
   milkRecords: MilkRecord[];
+  poultry: Poultry[];
+  eggRecords: EggRecord[];
+  feedRecords: FeedRecord[];
+  equipmentRecords: EquipmentRecord[];
   sales: Sale[];
   expenses: Expense[];
   invoices: Invoice[];
@@ -76,4 +127,4 @@ export interface AppSettings {
   lastBackup: string | null;
 }
 
-export type PageType = 'dashboard' | 'goats' | 'production' | 'sales' | 'expenses' | 'invoices' | 'statistics' | 'settings';
+export type PageType = 'dashboard' | 'goats' | 'poultry' | 'eggs' | 'production' | 'feed' | 'equipment' | 'sales' | 'expenses' | 'invoices' | 'statistics' | 'settings';

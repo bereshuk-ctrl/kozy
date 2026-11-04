@@ -9,7 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { AppData, Goat, MilkRecord, Sale, Expense, Invoice, InvoiceItem, PageType } from './types';
+import { AppData, Goat, MilkRecord, Poultry, PoultryType, EggRecord, FeedRecord, EquipmentRecord, Sale, Expense, Invoice, InvoiceItem, PageType } from './types';
 import { loadData, saveData, exportData, importData, generateId, formatCurrency, formatDate, getToday } from './store';
 
 // ==================== MODAL COMPONENT ====================
@@ -64,22 +64,25 @@ function TextArea({ label, ...props }: { label: string } & React.TextareaHTMLAtt
 // ==================== DASHBOARD ====================
 function Dashboard({ data }: { data: AppData }) {
   const activeGoats = data.goats.filter(g => g.status === 'active');
+  const activePoultry = data.poultry.filter(p => p.status === 'active');
   const thisMonth = new Date().toISOString().slice(0, 7);
   
   const monthSales = data.sales.filter(s => s.date.startsWith(thisMonth));
   const monthExpenses = data.expenses.filter(e => e.date.startsWith(thisMonth));
   const monthMilk = data.milkRecords.filter(m => m.date.startsWith(thisMonth));
+  const monthEggs = data.eggRecords.filter(e => e.date.startsWith(thisMonth));
   
   const totalIncome = monthSales.reduce((s, x) => s + x.total, 0);
   const totalExpense = monthExpenses.reduce((s, x) => s + x.amount, 0);
   const totalMilk = monthMilk.reduce((s, x) => s + x.total, 0);
+  const totalEggs = monthEggs.reduce((s, x) => s + x.net, 0);
   const profit = totalIncome - totalExpense;
 
   const stats = [
-    { label: 'Поголовье', value: activeGoats.length.toString(), icon: '🐐', color: 'from-blue-500 to-cyan-500' },
+    { label: 'Козы', value: activeGoats.length.toString(), icon: '🐐', color: 'from-blue-500 to-cyan-500' },
+    { label: 'Птица', value: activePoultry.reduce((s, p) => s + p.count, 0).toString(), icon: '🐔', color: 'from-amber-500 to-orange-500' },
     { label: `Удой (${data.settings.milkUnit})`, value: totalMilk.toFixed(1), icon: '🥛', color: 'from-green-500 to-emerald-500' },
-    { label: 'Доход', value: formatCurrency(totalIncome, data.settings.currency), icon: '💰', color: 'from-yellow-500 to-orange-500' },
-    { label: 'Расход', value: formatCurrency(totalExpense, data.settings.currency), icon: '💸', color: 'from-red-500 to-pink-500' },
+    { label: 'Яйца (шт)', value: totalEggs.toString(), icon: '🥚', color: 'from-yellow-500 to-amber-500' },
   ];
 
   // Last 7 days milk chart
@@ -488,13 +491,23 @@ function SalesPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData) =
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Новая продажа">
         <Input label="Дата" type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
         <Select label="Продукт" value={form.product || ''} onChange={e => setForm({ ...form, product: e.target.value })}>
-          <option value="Молоко">Молоко</option>
-          <option value="Творог">Творог</option>
-          <option value="Сыр">Сыр</option>
-          <option value="Кефир">Кефир</option>
-          <option value="Сметана">Сметана</option>
-          <option value="Козлёнок">Козлёнок</option>
-          <option value="Другое">Другое</option>
+          <option value="Молоко">🥛 Молоко</option>
+          <option value="Творог">🧀 Творог</option>
+          <option value="Сыр">🧀 Сыр</option>
+          <option value="Кефир">🥛 Кефир</option>
+          <option value="Сметана">🥛 Сметана</option>
+          <option value="Яйца куриные">🥚 Яйца куриные</option>
+          <option value="Яйца утиные">🥚 Яйца утиные</option>
+          <option value="Яйца гусиные">🥚 Яйца гусиные</option>
+          <option value="Яйца индюшиные">🥚 Яйца индюшиные</option>
+          <option value="Козлёнок">🐐 Козлёнок</option>
+          <option value="Курица">🐔 Курица</option>
+          <option value="Индейка">🦃 Индейка</option>
+          <option value="Гусь">🪿 Гусь</option>
+          <option value="Утка">🦆 Утка</option>
+          <option value="Бройлер">🐥 Бройлер</option>
+          <option value="Пух/перо">🪶 Пух/перо</option>
+          <option value="Другое">📦 Другое</option>
         </Select>
         <Input label="Покупатель *" value={form.buyer || ''} onChange={e => setForm({ ...form, buyer: e.target.value })} placeholder="Иванов И.И." />
         <div className="flex gap-3">
@@ -816,6 +829,523 @@ function InvoicesPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData
   );
 }
 
+// ==================== POULTRY PAGE ====================
+function PoultryPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData) => void }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editItem, setEditItem] = useState<Poultry | null>(null);
+  const [form, setForm] = useState<Partial<Poultry>>({ status: 'active', type: 'chicken', purpose: 'layer', count: 1, purchasePrice: 0 });
+  const [filterType, setFilterType] = useState<PoultryType | 'all'>('all');
+
+  const typeLabels: Record<PoultryType, string> = { chicken: '🐔 Куры', turkey: '🦃 Индюки', goose: '🪿 Гуси', duck: '🦆 Индоутки', broiler: '🐥 Бройлеры' };
+  const typeIcons: Record<PoultryType, string> = { chicken: '🐔', turkey: '🦃', goose: '🪿', duck: '🦆', broiler: '🐥' };
+  const purposeLabels: Record<PoultryType, string> = { chicken: '🐔', turkey: '🦃', goose: '🪿', duck: '🦆', broiler: '🐥' };
+
+  const openAdd = () => { setForm({ status: 'active', type: 'chicken', purpose: 'layer', count: 1, purchasePrice: 0 }); setEditItem(null); setShowModal(true); };
+  const openEdit = (p: Poultry) => { setForm(p); setEditItem(p); setShowModal(true); };
+
+  const handleSave = () => {
+    if (!form.name) return;
+    if (editItem) {
+      const updated = data.poultry.map(p => p.id === editItem.id ? { ...p, ...form } as Poultry : p);
+      onUpdate({ ...data, poultry: updated });
+    } else {
+      const newPoultry: Poultry = {
+        id: generateId(),
+        name: form.name || '',
+        type: form.type || 'chicken',
+        breed: form.breed || '',
+        birthDate: form.birthDate || '',
+        purchaseDate: form.purchaseDate || getToday(),
+        purchasePrice: form.purchasePrice || 0,
+        purpose: form.purpose || 'layer',
+        count: form.count || 1,
+        notes: form.notes || '',
+        status: form.status || 'active',
+      };
+      onUpdate({ ...data, poultry: [...data.poultry, newPoultry] });
+    }
+    setShowModal(false);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm('Удалить запись?')) {
+      onUpdate({ ...data, poultry: data.poultry.filter(p => p.id !== id) });
+    }
+  };
+
+  const activePoultry = data.poultry.filter(p => p.status === 'active');
+  const filtered = filterType === 'all' ? activePoultry : activePoultry.filter(p => p.type === filterType);
+  const totalByType = (type: PoultryType) => activePoultry.filter(p => p.type === type).reduce((s, p) => s + p.count, 0);
+
+  return (
+    <div className="pb-4">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Птица</h1>
+          <p className="text-gray-400 text-sm">{activePoultry.reduce((s, p) => s + p.count, 0)} голов</p>
+        </div>
+        <button onClick={openAdd} className="p-3 bg-amber-500 rounded-xl hover:bg-amber-600 transition-colors">
+          <Plus size={20} className="text-white" />
+        </button>
+      </div>
+
+      {/* Summary by type */}
+      <div className="grid grid-cols-5 gap-2 mb-4">
+        {(Object.keys(typeLabels) as PoultryType[]).map(type => (
+          <button key={type} onClick={() => setFilterType(filterType === type ? 'all' : type)}
+            className={`flex flex-col items-center p-2 rounded-xl text-center transition-all ${filterType === type ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-gray-900 border border-gray-800'}`}>
+            <span className="text-xl">{typeIcons[type]}</span>
+            <span className="text-xs text-white font-bold mt-1">{totalByType(type)}</span>
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-5xl mb-4">🐔</div>
+          <p className="text-gray-400">Нет птицы</p>
+          <button onClick={openAdd} className="mt-4 text-amber-400 text-sm">+ Добавить партию</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(p => (
+            <div key={p.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xl">{typeIcons[p.type]}</span>
+                    <h3 className="text-white font-semibold">{p.name}</h3>
+                    <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{p.count} гол.</span>
+                  </div>
+                  <p className="text-sm text-gray-400">{p.breed || 'Порода не указана'}</p>
+                  <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-500">
+                    {p.purchaseDate && <span>📅 {formatDate(p.purchaseDate)}</span>}
+                    {p.purchasePrice > 0 && <span>💰 {formatCurrency(p.purchasePrice, data.settings.currency)}</span>}
+                    <span>{p.purpose === 'layer' ? '🥚 Несушки' : p.purpose === 'meat' ? '🍖 Мясо' : '🧬 Племя'}</span>
+                  </div>
+                  {p.notes && <p className="text-xs text-gray-500 mt-2 italic">{p.notes}</p>}
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => openEdit(p)} className="p-2 hover:bg-gray-800 rounded-lg"><Edit2 size={16} className="text-gray-400" /></button>
+                  <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-gray-800 rounded-lg"><Trash2 size={16} className="text-red-400" /></button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Редактировать' : 'Новая партия птицы'}>
+        <Input label="Название/партия *" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Куры-несушки №1" />
+        <Select label="Вид птицы" value={form.type || 'chicken'} onChange={e => setForm({ ...form, type: e.target.value as PoultryType })}>
+          <option value="chicken">🐔 Куры</option>
+          <option value="turkey">🦃 Индюки</option>
+          <option value="goose">🪿 Гуси</option>
+          <option value="duck">🦆 Индоутки</option>
+          <option value="broiler">🐥 Бройлеры</option>
+        </Select>
+        <Input label="Порода" value={form.breed || ''} onChange={e => setForm({ ...form, breed: e.target.value })} placeholder="Ломан Браун" />
+        <Input label="Количество (голов)" type="number" value={form.count || ''} onChange={e => setForm({ ...form, count: Number(e.target.value) })} placeholder="10" />
+        <Select label="Назначение" value={form.purpose || 'layer'} onChange={e => setForm({ ...form, purpose: e.target.value as Poultry['purpose'] })}>
+          <option value="layer">🥚 Несушки</option>
+          <option value="meat">🍖 На мясо</option>
+          <option value="breeding">🧬 Племенное</option>
+        </Select>
+        <Input label="Дата покупки" type="date" value={form.purchaseDate || ''} onChange={e => setForm({ ...form, purchaseDate: e.target.value })} />
+        <Input label="Цена покупки" type="number" value={form.purchasePrice || ''} onChange={e => setForm({ ...form, purchasePrice: Number(e.target.value) })} placeholder="5000" />
+        <Input label="Дата рождения" type="date" value={form.birthDate || ''} onChange={e => setForm({ ...form, birthDate: e.target.value })} />
+        <Select label="Статус" value={form.status || 'active'} onChange={e => setForm({ ...form, status: e.target.value as Poultry['status'] })}>
+          <option value="active">Активна</option>
+          <option value="sold">Продана</option>
+          <option value="dead">Пала</option>
+        </Select>
+        <TextArea label="Заметки" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+        <button onClick={handleSave} className="w-full mt-4 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors">
+          {editItem ? 'Сохранить' : 'Добавить'}
+        </button>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== EGGS PAGE ====================
+function EggsPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData) => void }) {
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState<Partial<EggRecord>>({ date: getToday(), quantity: 0, broken: 0, notes: '' });
+  const [filterDate, setFilterDate] = useState(getToday());
+
+  const layers = data.poultry.filter(p => p.status === 'active' && p.purpose === 'layer');
+  const dayRecords = data.eggRecords.filter(e => e.date === filterDate);
+  const dayTotal = dayRecords.reduce((s, x) => s + x.net, 0);
+
+  const handleSave = () => {
+    if (!form.poultryId) return;
+    const qty = Number(form.quantity) || 0;
+    const brk = Number(form.broken) || 0;
+    const record: EggRecord = {
+      id: generateId(),
+      poultryId: form.poultryId!,
+      date: form.date || getToday(),
+      quantity: qty,
+      broken: brk,
+      net: qty - brk,
+      notes: form.notes || '',
+    };
+    onUpdate({ ...data, eggRecords: [...data.eggRecords, record] });
+    setShowModal(false);
+    setForm({ date: getToday(), quantity: 0, broken: 0, notes: '' });
+  };
+
+  const handleDelete = (id: string) => {
+    onUpdate({ ...data, eggRecords: data.eggRecords.filter(e => e.id !== id) });
+  };
+
+  const getPoultryName = (id: string) => data.poultry.find(p => p.id === id)?.name || 'Неизвестно';
+  const getPoultryIcon = (id: string) => {
+    const p = data.poultry.find(p => p.id === id);
+    if (!p) return '🥚';
+    const icons: Record<PoultryType, string> = { chicken: '🐔', turkey: '🦃', goose: '🪿', duck: '🦆', broiler: '🐥' };
+    return icons[p.type] || '🥚';
+  };
+
+  // Weekly summary
+  const last7days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().split('T')[0];
+  });
+  const weeklyTotal = data.eggRecords.filter(e => last7days.includes(e.date)).reduce((s, x) => s + x.net, 0);
+
+  return (
+    <div className="pb-4">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Яйца</h1>
+          <p className="text-gray-400 text-sm">Учёт яйценоскости</p>
+        </div>
+        <button onClick={() => setShowModal(true)} className="p-3 bg-amber-500 rounded-xl hover:bg-amber-600 transition-colors">
+          <Plus size={20} className="text-white" />
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+          <p className="text-xs text-gray-400">Сегодня</p>
+          <p className="text-2xl font-bold text-amber-400">{dayTotal} <span className="text-sm text-gray-400">шт</span></p>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+          <p className="text-xs text-gray-400">За 7 дней</p>
+          <p className="text-2xl font-bold text-amber-400">{weeklyTotal} <span className="text-sm text-gray-400">шт</span></p>
+        </div>
+      </div>
+
+      {/* Date filter */}
+      <div className="flex items-center gap-3 mb-4">
+        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
+          className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-2 text-white text-sm flex-1" />
+      </div>
+
+      {layers.length === 0 ? (
+        <div className="text-center py-8">
+          <div className="text-5xl mb-4">🥚</div>
+          <p className="text-gray-400">Добавьте несушек в разделе «Птица»</p>
+        </div>
+      ) : dayRecords.length === 0 ? (
+        <div className="text-center py-8">
+          <div className="text-5xl mb-4">🥚</div>
+          <p className="text-gray-400">Нет записей за {formatDate(filterDate)}</p>
+          <button onClick={() => setShowModal(true)} className="mt-4 text-amber-400 text-sm">+ Записать яйца</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {dayRecords.map(record => (
+            <div key={record.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{getPoultryIcon(record.poultryId)}</span>
+                    <h3 className="text-white font-semibold">{getPoultryName(record.poultryId)}</h3>
+                  </div>
+                  <div className="flex gap-4 mt-1 text-sm">
+                    <span className="text-amber-400">🥚 {record.quantity} шт</span>
+                    {record.broken > 0 && <span className="text-red-400">💔 {record.broken} шт</span>}
+                  </div>
+                  {record.notes && <p className="text-xs text-gray-500 mt-1">{record.notes}</p>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-bold text-green-400">{record.net} шт</span>
+                  <button onClick={() => handleDelete(record.id)} className="p-2 hover:bg-gray-800 rounded-lg">
+                    <Trash2 size={16} className="text-red-400" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Записать яйца">
+        <Select label="Партия птицы *" value={form.poultryId || ''} onChange={e => setForm({ ...form, poultryId: e.target.value })}>
+          <option value="">Выберите партию</option>
+          {layers.map(p => {
+            const icons: Record<PoultryType, string> = { chicken: '🐔', turkey: '🦃', goose: '🪿', duck: '🦆', broiler: '🐥' };
+            return <option key={p.id} value={p.id}>{icons[p.type]} {p.name} ({p.count} гол.)</option>;
+          })}
+        </Select>
+        <Input label="Дата" type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
+        <Input label="Собрано (шт) *" type="number" value={form.quantity || ''} onChange={e => setForm({ ...form, quantity: Number(e.target.value) })} placeholder="25" />
+        <Input label="Бой/брак (шт)" type="number" value={form.broken || ''} onChange={e => setForm({ ...form, broken: Number(e.target.value) })} placeholder="0" />
+        {form.quantity !== undefined && (
+          <div className="bg-gray-800 rounded-xl p-3 mb-3 text-center">
+            <span className="text-gray-400 text-sm">Чистый сбор: </span>
+            <span className="text-amber-400 font-bold">{(Number(form.quantity) || 0) - (Number(form.broken) || 0)} шт</span>
+          </div>
+        )}
+        <TextArea label="Заметки" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Мелкие, крупные..." />
+        <button onClick={handleSave} className="w-full mt-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors">
+          Записать
+        </button>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== FEED PAGE ====================
+function FeedPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData) => void }) {
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState<Partial<FeedRecord>>({ date: getToday(), type: 'all', category: 'compound', quantity: 0, unit: 'кг', cost: 0 });
+
+  const handleSave = () => {
+    if (!form.description) return;
+    const record: FeedRecord = {
+      id: generateId(),
+      date: form.date || getToday(),
+      type: form.type || 'all',
+      category: form.category || 'compound',
+      description: form.description || '',
+      quantity: Number(form.quantity) || 0,
+      unit: form.unit || 'кг',
+      cost: Number(form.cost) || 0,
+    };
+    onUpdate({ ...data, feedRecords: [...data.feedRecords, record] });
+    setShowModal(false);
+    setForm({ date: getToday(), type: 'all', category: 'compound', quantity: 0, unit: 'кг', cost: 0 });
+  };
+
+  const handleDelete = (id: string) => {
+    onUpdate({ ...data, feedRecords: data.feedRecords.filter(f => f.id !== id) });
+  };
+
+  const categoryLabels: Record<string, string> = { grain: '🌾 Зерно', compound: '🥣 Комбикорм', hay: '🌿 Сено/трава', vegetables: '🥕 Овощи', supplements: '💊 Добавки', other: '📦 Другое' };
+  const typeLabels: Record<string, string> = { goat: '🐐 Козы', poultry: '🐔 Птица', all: '🐾 Все' };
+
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthFeeds = data.feedRecords.filter(f => f.date.startsWith(thisMonth));
+  const monthTotal = monthFeeds.reduce((s, x) => s + x.cost, 0);
+
+  // By category this month
+  const byCategory: Record<string, number> = {};
+  monthFeeds.forEach(f => { byCategory[f.category] = (byCategory[f.category] || 0) + f.cost; });
+
+  return (
+    <div className="pb-4">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Корма</h1>
+          <p className="text-gray-400 text-sm">Учёт закупки кормов</p>
+        </div>
+        <button onClick={() => setShowModal(true)} className="p-3 bg-green-600 rounded-xl hover:bg-green-700 transition-colors">
+          <Plus size={20} className="text-white" />
+        </button>
+      </div>
+
+      <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-2xl p-4 mb-4">
+        <p className="text-sm text-gray-400">Расход на корма (месяц)</p>
+        <p className="text-2xl font-bold text-green-400">{formatCurrency(monthTotal, data.settings.currency)}</p>
+      </div>
+
+      {/* Category breakdown */}
+      {Object.keys(byCategory).length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-4">
+          <h3 className="text-white font-semibold text-sm mb-3">По категориям (месяц)</h3>
+          <div className="space-y-2">
+            {Object.entries(byCategory).sort(([, a], [, b]) => b - a).map(([cat, amount]) => (
+              <div key={cat} className="flex items-center justify-between">
+                <span className="text-sm text-gray-300">{categoryLabels[cat] || cat}</span>
+                <span className="text-sm text-white font-medium">{formatCurrency(amount, data.settings.currency)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.feedRecords.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-5xl mb-4">🌾</div>
+          <p className="text-gray-400">Нет записей о кормах</p>
+          <button onClick={() => setShowModal(true)} className="mt-4 text-green-400 text-sm">+ Добавить закупку</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {[...data.feedRecords].reverse().map(feed => (
+            <div key={feed.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{categoryLabels[feed.category]}</span>
+                    <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{typeLabels[feed.type]}</span>
+                  </div>
+                  <h3 className="text-white font-semibold">{feed.description}</h3>
+                  <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                    <span>{feed.quantity} {feed.unit}</span>
+                    <span>{formatDate(feed.date)}</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-green-400 font-bold">{formatCurrency(feed.cost, data.settings.currency)}</span>
+                  <button onClick={() => handleDelete(feed.id)} className="block ml-auto mt-1 p-1 hover:bg-gray-800 rounded">
+                    <Trash2 size={14} className="text-red-400" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Закупка корма">
+        <Input label="Дата" type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
+        <Select label="Для кого" value={form.type || 'all'} onChange={e => setForm({ ...form, type: e.target.value as FeedRecord['type'] })}>
+          <option value="all">🐾 Все животные</option>
+          <option value="goat">🐐 Козы</option>
+          <option value="poultry">🐔 Птица</option>
+        </Select>
+        <Select label="Категория" value={form.category || 'compound'} onChange={e => setForm({ ...form, category: e.target.value as FeedRecord['category'] })}>
+          <option value="grain">🌾 Зерно</option>
+          <option value="compound">🥣 Комбикорм</option>
+          <option value="hay">🌿 Сено/трава</option>
+          <option value="vegetables">🥕 Овощи</option>
+          <option value="supplements">💊 Добавки/витамины</option>
+          <option value="other">📦 Другое</option>
+        </Select>
+        <Input label="Описание *" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Комбикорм ПК-1" />
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <Input label="Количество" type="number" step="0.1" value={form.quantity || ''} onChange={e => setForm({ ...form, quantity: Number(e.target.value) })} placeholder="50" />
+          </div>
+          <div className="flex-1">
+            <Select label="Ед." value={form.unit || 'кг'} onChange={e => setForm({ ...form, unit: e.target.value })}>
+              <option value="кг">кг</option>
+              <option value="т">т</option>
+              <option value="шт">шт</option>
+              <option value="уп">уп</option>
+              <option value="л">л</option>
+            </Select>
+          </div>
+        </div>
+        <Input label={`Стоимость (${data.settings.currency})`} type="number" value={form.cost || ''} onChange={e => setForm({ ...form, cost: Number(e.target.value) })} placeholder="1500" />
+        <button onClick={handleSave} className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-colors">
+          Добавить
+        </button>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== EQUIPMENT PAGE ====================
+function EquipmentPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData) => void }) {
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState<Partial<EquipmentRecord>>({ date: getToday(), category: 'general', cost: 0 });
+
+  const handleSave = () => {
+    if (!form.name) return;
+    const record: EquipmentRecord = {
+      id: generateId(),
+      date: form.date || getToday(),
+      name: form.name || '',
+      category: form.category || 'general',
+      cost: Number(form.cost) || 0,
+      notes: form.notes || '',
+    };
+    onUpdate({ ...data, equipmentRecords: [...data.equipmentRecords, record] });
+    setShowModal(false);
+    setForm({ date: getToday(), category: 'general', cost: 0 });
+  };
+
+  const handleDelete = (id: string) => {
+    onUpdate({ ...data, equipmentRecords: data.equipmentRecords.filter(e => e.id !== id) });
+  };
+
+  const categoryLabels: Record<string, string> = { poultry: '🐔 Для птицы', goat: '🐐 Для коз', general: '🔧 Общее' };
+
+  const totalEquipment = data.equipmentRecords.reduce((s, x) => s + x.cost, 0);
+
+  return (
+    <div className="pb-4">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Оборудование</h1>
+          <p className="text-gray-400 text-sm">Инвентарь и техника</p>
+        </div>
+        <button onClick={() => setShowModal(true)} className="p-3 bg-indigo-500 rounded-xl hover:bg-indigo-600 transition-colors">
+          <Plus size={20} className="text-white" />
+        </button>
+      </div>
+
+      <div className="bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 rounded-2xl p-4 mb-4">
+        <p className="text-sm text-gray-400">Всего вложено в оборудование</p>
+        <p className="text-2xl font-bold text-indigo-400">{formatCurrency(totalEquipment, data.settings.currency)}</p>
+      </div>
+
+      {data.equipmentRecords.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-5xl mb-4">🔧</div>
+          <p className="text-gray-400">Нет записей</p>
+          <button onClick={() => setShowModal(true)} className="mt-4 text-indigo-400 text-sm">+ Добавить</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {[...data.equipmentRecords].reverse().map(eq => (
+            <div key={eq.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{categoryLabels[eq.category]}</span>
+                  </div>
+                  <h3 className="text-white font-semibold">{eq.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1">{formatDate(eq.date)}</p>
+                  {eq.notes && <p className="text-xs text-gray-500 mt-1">{eq.notes}</p>}
+                </div>
+                <div className="text-right">
+                  <span className="text-indigo-400 font-bold">{formatCurrency(eq.cost, data.settings.currency)}</span>
+                  <button onClick={() => handleDelete(eq.id)} className="block ml-auto mt-1 p-1 hover:bg-gray-800 rounded">
+                    <Trash2 size={14} className="text-red-400" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Новое оборудование">
+        <Input label="Дата" type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
+        <Select label="Категория" value={form.category || 'general'} onChange={e => setForm({ ...form, category: e.target.value as EquipmentRecord['category'] })}>
+          <option value="poultry">🐔 Для птицы</option>
+          <option value="goat">🐐 Для коз</option>
+          <option value="general">🔧 Общее</option>
+        </Select>
+        <Input label="Название *" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Поилка автоматическая" />
+        <Input label={`Стоимость (${data.settings.currency})`} type="number" value={form.cost || ''} onChange={e => setForm({ ...form, cost: Number(e.target.value) })} placeholder="3000" />
+        <TextArea label="Заметки" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+        <button onClick={handleSave} className="w-full mt-4 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 rounded-xl transition-colors">
+          Добавить
+        </button>
+      </Modal>
+    </div>
+  );
+}
+
 // ==================== STATISTICS PAGE ====================
 function StatisticsPage({ data }: { data: AppData }) {
   const [period, setPeriod] = useState<'week' | 'month' | 'all'>('month');
@@ -835,9 +1365,10 @@ function StatisticsPage({ data }: { data: AppData }) {
 
   const filterDate = getDateFilter();
   const filteredMilk = data.milkRecords.filter(m => m.date >= filterDate);
+  const filteredEggs = data.eggRecords.filter(e => e.date >= filterDate);
   const filteredSales = data.sales.filter(s => s.date >= filterDate);
   const filteredExpenses = data.expenses.filter(e => e.date >= filterDate);
-
+  
   // Per goat milk stats
   const goatMilkStats = data.goats.filter(g => g.status === 'active').map(goat => {
     const records = filteredMilk.filter(m => m.goatId === goat.id);
@@ -846,16 +1377,34 @@ function StatisticsPage({ data }: { data: AppData }) {
     return { name: goat.name, total: Math.round(total * 10) / 10, avg: Math.round(avg * 10) / 10, records: records.length };
   }).sort((a, b) => b.total - a.total);
 
+  // Per poultry egg stats
+  const poultryEggStats = data.poultry.filter(p => p.status === 'active' && p.purpose === 'layer').map(p => {
+    const records = filteredEggs.filter(e => e.poultryId === p.id);
+    const total = records.reduce((s, x) => s + x.net, 0);
+    const avg = records.length > 0 ? total / records.length : 0;
+    const icons: Record<string, string> = { chicken: '🐔', turkey: '🦃', goose: '🪿', duck: '🦆', broiler: '🐥' };
+    return { name: p.name, icon: icons[p.type] || '🥚', total, avg: Math.round(avg), records: records.length };
+  }).sort((a, b) => b.total - a.total);
+  
   // Daily totals for chart
-  const dailyData: Record<string, number> = {};
+  const dailyMilkData: Record<string, number> = {};
   filteredMilk.forEach(m => {
-    dailyData[m.date] = (dailyData[m.date] || 0) + m.total;
+    dailyMilkData[m.date] = (dailyMilkData[m.date] || 0) + m.total;
   });
-  const chartData = Object.entries(dailyData).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({
+  const milkChartData = Object.entries(dailyMilkData).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({
     date: new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
     total,
   }));
 
+  // Daily eggs chart
+  const dailyEggData: Record<string, number> = {};
+  filteredEggs.forEach(e => {
+    dailyEggData[e.date] = (dailyEggData[e.date] || 0) + e.net;
+  });
+  const eggChartData = Object.entries(dailyEggData).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({
+    date: new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
+    total,
+  }));
   // Financial summary
   const income = filteredSales.reduce((s, x) => s + x.total, 0);
   const expenses = filteredExpenses.reduce((s, x) => s + x.amount, 0);
@@ -901,17 +1450,35 @@ function StatisticsPage({ data }: { data: AppData }) {
       </div>
 
       {/* Milk chart */}
-      {chartData.length > 0 && (
+      {milkChartData.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-6">
           <h3 className="text-white font-semibold mb-4">Динамика удоев ({data.settings.milkUnit}/день)</h3>
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={milkChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis dataKey="date" tick={{ fill: '#888', fontSize: 10 }} />
                 <YAxis tick={{ fill: '#888', fontSize: 10 }} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333', borderRadius: '8px' }} />
                 <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Eggs chart */}
+      {eggChartData.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-6">
+          <h3 className="text-white font-semibold mb-4">Динамика яйценоскости (шт/день)</h3>
+          <div className="h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={eggChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis dataKey="date" tick={{ fill: '#888', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#888', fontSize: 10 }} />
+                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333', borderRadius: '8px' }} />
+                <Line type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b', r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -938,6 +1505,33 @@ function StatisticsPage({ data }: { data: AppData }) {
                       style={{ width: `${goatMilkStats[0].total > 0 ? (goat.total / goatMilkStats[0].total) * 100 : 0}%` }} />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Ср. {goat.avg} {data.settings.milkUnit}/день • {goat.records} записей</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Per poultry egg stats */}
+      {poultryEggStats.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-6">
+          <h3 className="text-white font-semibold mb-4">Яйценоскость по партиям (шт)</h3>
+          <div className="space-y-3">
+            {poultryEggStats.map((p, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center text-sm">
+                  {p.icon}
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-white text-sm font-medium">{p.name}</span>
+                    <span className="text-amber-400 text-sm font-bold">{p.total} шт</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-2">
+                    <div className="bg-gradient-to-r from-amber-500 to-yellow-500 h-2 rounded-full transition-all"
+                      style={{ width: `${poultryEggStats[0].total > 0 ? (p.total / poultryEggStats[0].total) * 100 : 0}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Ср. {p.avg} шт/день • {p.records} записей</p>
                 </div>
               </div>
             ))}
@@ -1014,7 +1608,8 @@ function SettingsPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData
     if (confirm('⚠️ Удалить ВСЕ данные? Это действие нельзя отменить!')) {
       if (confirm('Вы уверены? Все козы, записи, продажи и расходы будут удалены!')) {
         const emptyData: AppData = {
-          goats: [], milkRecords: [], sales: [], expenses: [], invoices: [],
+          goats: [], milkRecords: [], poultry: [], eggRecords: [], feedRecords: [], equipmentRecords: [],
+          sales: [], expenses: [], invoices: [],
           settings: data.settings,
         };
         onUpdate(emptyData);
@@ -1067,6 +1662,18 @@ function SettingsPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData
             <span className="text-white">{data.milkRecords.length}</span>
           </div>
           <div className="flex justify-between text-sm mt-1">
+            <span className="text-gray-400">Птица:</span>
+            <span className="text-white">{data.poultry.length} партий</span>
+          </div>
+          <div className="flex justify-between text-sm mt-1">
+            <span className="text-gray-400">Записей яиц:</span>
+            <span className="text-white">{data.eggRecords.length}</span>
+          </div>
+          <div className="flex justify-between text-sm mt-1">
+            <span className="text-gray-400">Записей кормов:</span>
+            <span className="text-white">{data.feedRecords.length}</span>
+          </div>
+          <div className="flex justify-between text-sm mt-1">
             <span className="text-gray-400">Последний бекап:</span>
             <span className="text-white">{data.settings.lastBackup ? formatDate(data.settings.lastBackup.split('T')[0]) : 'Не выполнялся'}</span>
           </div>
@@ -1091,8 +1698,8 @@ function SettingsPage({ data, onUpdate }: { data: AppData; onUpdate: (d: AppData
       {/* About */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-4">
         <h3 className="text-white font-semibold mb-3">ℹ️ О приложении</h3>
-        <p className="text-gray-400 text-sm">Ферма Manager — приложение для учёта козьей фермы. Все данные хранятся локально на вашем устройстве.</p>
-        <p className="text-gray-500 text-xs mt-2">Версия 1.0 • PWA</p>
+        <p className="text-gray-400 text-sm">Ферма Manager — приложение для учёта фермерского хозяйства: козы, птица (куры, индюки, гуси, индоутки, бройлеры), удои, яйца, корма, оборудование, продажи и финансы. Все данные хранятся локально на вашем устройстве.</p>
+        <p className="text-gray-500 text-xs mt-2">Версия 2.0 • PWA</p>
       </div>
 
       {/* Danger zone */}
@@ -1122,12 +1729,16 @@ export default function App() {
   const navItems = [
     { id: 'dashboard' as PageType, icon: Home, label: 'Главная' },
     { id: 'goats' as PageType, icon: Users, label: 'Козы' },
-    { id: 'production' as PageType, icon: Droplets, label: 'Удои' },
+    { id: 'poultry' as PageType, icon: () => <span className="text-xl">🐔</span>, label: 'Птица' },
+    { id: 'eggs' as PageType, icon: () => <span className="text-xl">🥚</span>, label: 'Яйца' },
     { id: 'sales' as PageType, icon: ShoppingCart, label: 'Продажи' },
-    { id: 'expenses' as PageType, icon: Receipt, label: 'Расходы' },
   ];
 
   const moreItems = [
+    { id: 'production' as PageType, icon: Droplets, label: 'Удои' },
+    { id: 'feed' as PageType, icon: () => <span className="text-xl">🌾</span>, label: 'Корма' },
+    { id: 'equipment' as PageType, icon: () => <span className="text-xl">🔧</span>, label: 'Оборуд.' },
+    { id: 'expenses' as PageType, icon: Receipt, label: 'Расходы' },
     { id: 'invoices' as PageType, icon: FileText, label: 'Счета' },
     { id: 'statistics' as PageType, icon: BarChart3, label: 'Статистика' },
     { id: 'settings' as PageType, icon: Settings, label: 'Настройки' },
@@ -1139,7 +1750,11 @@ export default function App() {
     switch (page) {
       case 'dashboard': return <Dashboard data={data} />;
       case 'goats': return <GoatsPage data={data} onUpdate={handleUpdate} />;
+      case 'poultry': return <PoultryPage data={data} onUpdate={handleUpdate} />;
+      case 'eggs': return <EggsPage data={data} onUpdate={handleUpdate} />;
       case 'production': return <ProductionPage data={data} onUpdate={handleUpdate} />;
+      case 'feed': return <FeedPage data={data} onUpdate={handleUpdate} />;
+      case 'equipment': return <EquipmentPage data={data} onUpdate={handleUpdate} />;
       case 'sales': return <SalesPage data={data} onUpdate={handleUpdate} />;
       case 'expenses': return <ExpensesPage data={data} onUpdate={handleUpdate} />;
       case 'invoices': return <InvoicesPage data={data} onUpdate={handleUpdate} />;
