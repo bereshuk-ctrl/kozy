@@ -33,18 +33,18 @@ export function loadData(): AppData {
   }
 }
 
-export function saveData(data: AppData): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+export function saveData(d: AppData): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
 }
 
-export function exportData(data: AppData): string {
-  return JSON.stringify(data, null, 2);
+export function exportData(d: AppData): string {
+  return JSON.stringify(d, null, 2);
 }
 
 export function importData(json: string): AppData | null {
   try {
     const parsed = JSON.parse(json);
-    if (parsed.goats && parsed.milkRecords) {
+    if (parsed.goats !== undefined) {
       return { ...defaultData, ...parsed, settings: { ...defaultSettings, ...parsed.settings } };
     }
     return null;
@@ -69,9 +69,4 @@ export function formatDate(dateStr: string): string {
 
 export function getToday(): string {
   return new Date().toISOString().split('T')[0];
-}
-
-export function getMonthStart(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }

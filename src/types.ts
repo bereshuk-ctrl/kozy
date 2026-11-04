@@ -19,47 +19,6 @@ export interface MilkRecord {
   total: number;
 }
 
-export interface Sale {
-  id: string;
-  date: string;
-  product: string;
-  quantity: number;
-  unit: string;
-  pricePerUnit: number;
-  total: number;
-  buyer: string;
-  invoiceId?: string;
-}
-
-export interface Expense {
-  id: string;
-  date: string;
-  category: 'feed' | 'vet' | 'purchase' | 'equipment' | 'other';
-  description: string;
-  amount: number;
-}
-
-export interface Invoice {
-  id: string;
-  number: string;
-  date: string;
-  dueDate: string;
-  buyer: string;
-  buyerPhone: string;
-  items: InvoiceItem[];
-  total: number;
-  status: 'pending' | 'paid' | 'overdue';
-  notes: string;
-}
-
-export interface InvoiceItem {
-  product: string;
-  quantity: number;
-  unit: string;
-  price: number;
-  total: number;
-}
-
 export type PoultryType = 'chicken' | 'turkey' | 'goose' | 'duck' | 'broiler';
 export type PoultryPurpose = 'layer' | 'meat' | 'breeding';
 
@@ -107,6 +66,54 @@ export interface EquipmentRecord {
   notes: string;
 }
 
+export interface Sale {
+  id: string;
+  date: string;
+  product: string;
+  quantity: number;
+  unit: string;
+  pricePerUnit: number;
+  total: number;
+  buyer: string;
+  invoiceId?: string;
+}
+
+export interface Expense {
+  id: string;
+  date: string;
+  category: 'feed' | 'vet' | 'purchase' | 'equipment' | 'other';
+  description: string;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  date: string;
+  dueDate: string;
+  buyer: string;
+  buyerPhone: string;
+  items: InvoiceItem[];
+  total: number;
+  status: 'pending' | 'paid' | 'overdue';
+  notes: string;
+}
+
+export interface InvoiceItem {
+  product: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  total: number;
+}
+
+export interface AppSettings {
+  farmName: string;
+  currency: string;
+  milkUnit: string;
+  lastBackup: string | null;
+}
+
 export interface AppData {
   goats: Goat[];
   milkRecords: MilkRecord[];
@@ -120,11 +127,4 @@ export interface AppData {
   settings: AppSettings;
 }
 
-export interface AppSettings {
-  farmName: string;
-  currency: string;
-  milkUnit: string;
-  lastBackup: string | null;
-}
-
-export type PageType = 'dashboard' | 'goats' | 'poultry' | 'eggs' | 'production' | 'feed' | 'equipment' | 'sales' | 'expenses' | 'invoices' | 'statistics' | 'settings';
+export type PageType = 'dashboard' | 'goats' | 'poultry' | 'eggs' | 'production' | 'feed' | 'equipment' | 'sales' | 'expenses' | 'invoices' | 'statistics' | 'settings' | 'server';
